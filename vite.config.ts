@@ -41,7 +41,7 @@ function resolveClaudeAgentDir(env: Record<string, string>): string | null {
   )
 
   for (const candidate of candidates) {
-    if (existsSync(resolve(candidate, 'webapi'))) return candidate
+    if (existsSync(resolve(candidate, 'webapi')) || existsSync(resolve(candidate, 'gateway'))) return candidate
   }
   return null
 }
@@ -64,12 +64,24 @@ function resolveClaudeBinary(): string | null {
  *  Prefers .venv/bin/python inside agentDir, falls back to system python3.
  */
 function resolveClaudePython(agentDir: string): string {
-  const venvPython = resolve(agentDir, '.venv', 'bin', 'python')
+  const isWin = os.platform() === 'win32'
+  
+  // Check SAdQ OS backend virtualenv first
+  const backendVenv = isWin
+    ? resolve(agentDir, '..', 'backend', 'venv', 'Scripts', 'python.exe')
+    : resolve(agentDir, '..', 'backend', 'venv', 'bin', 'python')
+  if (existsSync(backendVenv)) return backendVenv
+
+  const venvPython = isWin
+    ? resolve(agentDir, '.venv', 'Scripts', 'python.exe')
+    : resolve(agentDir, '.venv', 'bin', 'python')
   if (existsSync(venvPython)) return venvPython
-  // uv creates 'venv' not '.venv' sometimes
-  const uvVenv = resolve(agentDir, 'venv', 'bin', 'python')
+  
+  const uvVenv = isWin
+    ? resolve(agentDir, 'venv', 'Scripts', 'python.exe')
+    : resolve(agentDir, 'venv', 'bin', 'python')
   if (existsSync(uvVenv)) return uvVenv
-  return 'python3'
+  return isWin ? 'python' : 'python3'
 }
 
 /** Check if hermes-agent health endpoint is responding */
@@ -475,7 +487,7 @@ const config = defineConfig(({ mode, command }) => {
       //   1. --port CLI flag (wins, but we no longer hardcode it in package.json)
       //   2. $PORT env var (for containers, reverse proxies, WhatsApp bridge collisions, etc. — see #96)
       //   3. default 3000 (matches README/docs/docker-compose expectations)
-      port: process.env.PORT ? Number(process.env.PORT) : 3000,
+      port: env.PORT ? Number(env.PORT) : (process.env.PORT ? Number(process.env.PORT) : 3000),
       strictPort: false, // allow fallback if port is taken, but log clearly
       allowedHosts: true,
       watch: {
